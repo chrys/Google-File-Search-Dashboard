@@ -1,0 +1,56 @@
+<div class="h-full flex gap-6">
+    <!-- Project Selection -->
+    <div class="w-1/4 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col p-4">
+        <h2 class="font-semibold text-gray-700 mb-4">Select Project</h2>
+        <div id="chat-project-list" class="space-y-2 overflow-y-auto flex-1" hx-get="/api/projects?type=chat"
+            hx-trigger="load">
+            <!-- Project list for chat -->
+            <div class="animate-pulse h-10 bg-gray-100 rounded"></div>
+        </div>
+    </div>
+
+    <!-- Chat Area -->
+    <div class="w-3/4 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col relative">
+        <!-- Chat Header -->
+        <div class="p-4 border-b border-gray-100 bg-gray-50 rounded-t-xl">
+            <h2 id="chat-header-title" class="font-semibold text-gray-700">Select a project to start chatting</h2>
+        </div>
+
+        <!-- Messages -->
+        <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-4">
+            <!-- Messages will appear here -->
+            <div class="flex justify-center items-center h-full text-gray-400 opacity-50">
+                <p>No messages yet</p>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 border-t border-gray-100 bg-white rounded-b-xl">
+            <form hx-post="/api/chat" hx-target="#chat-messages" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful) { document.getElementById('chat-input').value = ''; document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight; }" class="flex gap-2">
+                <input type="hidden" name="store_id" id="chat-store-id">
+                <input type="text" name="query" placeholder="Ask a question..."
+                    class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled id="chat-input">
+                <button type="submit"
+                    class="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled id="chat-submit">
+                    Send
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    function selectChatProject(storeId, displayName) {
+        document.getElementById('chat-store-id').value = storeId;
+        document.getElementById('chat-header-title').innerText = 'Chatting with: ' + displayName;
+        document.getElementById('chat-input').disabled = false;
+        document.getElementById('chat-submit').disabled = false;
+        document.getElementById('chat-messages').innerHTML = ''; // Clear previous chat
+
+        // Highlight selected
+        document.querySelectorAll('.chat-project-item').forEach(el => el.classList.remove('bg-blue-50', 'border-blue-200'));
+        document.getElementById('chat-project-' + storeId).classList.add('bg-blue-50', 'border-blue-200');
+    }
+</script>

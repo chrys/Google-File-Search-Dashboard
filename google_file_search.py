@@ -63,7 +63,7 @@ def list_all_file_search_stores():
         
         if not stores:
             print("No File Search Stores found for this project.")
-            return
+            return []
 
         print(f"\nFound {len(stores)} File Search Store(s):")
         print("=" * 40)
@@ -142,14 +142,24 @@ def add_document_to_store(store_id: str, file_path: str) -> str:
             operation = client.operations.get(operation)
 
         # Get the result from the completed operation
-        result = operation.result()
-        if result:
-            document_resource_name = result.name
-        else:
-            raise Exception(f"No result returned for {file_name}")
+        # Note: operation.result() is failing with AttributeError in some versions
         
-        print(f"   ✅ Indexing complete! Document Resource Name: {document_resource_name}\n")
-        return document_resource_name
+        # Workaround: Fetch the document by name from the store
+        print("   Verifying upload...")
+        pager = client.file_search_stores.documents.list(parent=store_id)
+        all_docs = list(pager)
+        
+        # Find documents with matching display name
+        matching_docs = [d for d in all_docs if d.display_name == file_name]
+        
+        if matching_docs:
+            # Get the most recently created one
+            newest_doc = max(matching_docs, key=lambda d: d.create_time)
+            document_resource_name = newest_doc.name
+            print(f"   ✅ Indexing complete! Document Resource Name: {document_resource_name}\n")
+            return document_resource_name
+        else:
+             raise Exception(f"Document {file_name} not found in store after upload.")
         
     except Exception as e:
         print(f"❌ Failed to add document to store: {e}")
@@ -231,7 +241,7 @@ def list_documents_in_store(store_id: str):
         
         if not documents:
             print(f"No documents found in store: {store_id}")
-            return
+            return []
 
         print(f"\nFound {len(documents)} document(s) in the store:")
         print("=" * 60)
@@ -248,10 +258,13 @@ def list_documents_in_store(store_id: str):
             print(f"State: {doc.state.name}") # State should be 'ACTIVE'
             print("-" * 60)
         
+        return documents
+        
         
             
     except Exception as e:
         print(f"❌ Failed to list documents for store {store_id}: {e}")
+        return []
  
 def delete_document_from_store(document_resource_name: str):
     """
@@ -290,6 +303,7 @@ def delete_document_from_store(document_resource_name: str):
         print(f"❌ Failed to delete document {document_resource_name}: {e}")
  
 def main():
+    pass
     # add_document_to_store(store_id = "fileSearchStores/myfirstfilesearchstore-kdvasuq6oqk8", file_path="/Users/chrys/Gemini File Search/data1.txt")
     # add_document_to_store(store_id = "fileSearchStores/mysecondfilesearchstore-1m3ju15v7hjz", file_path="/Users/chrys/Gemini File Search/data2.txt")    
 

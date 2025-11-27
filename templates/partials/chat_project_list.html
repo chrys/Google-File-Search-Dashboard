@@ -1,0 +1,12 @@
+{% for store in stores %}
+<div id="chat-project-{{ store.name }}"
+    class="chat-project-item p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all cursor-pointer"
+    onclick="selectChatProject('{{ store.name }}', '{{ store.display_name }}')">
+    <h3 class="font-medium text-gray-800">{{ store.display_name }}</h3>
+    <p class="text-xs text-gray-500 mt-1 truncate">{{ store.name.split('/')[-1] }}</p>
+</div>
+{% else %}
+<div class="text-center py-4 text-gray-500 text-sm">
+    <p>No projects available.</p>
+</div>
+{% endfor %}
