@@ -1,11 +1,18 @@
+# Environment
 .env
+
+# IDE
 Google File Search Dashboard.code-workspace
-*.pyc
- __pycache__/
- __pycache__/*
-__pycache__/app.cpython-314.pyc
-__pycache__/google_file_search.cpython-314.pyc
-uploads/*
 .vscode/settings.json
-src/__pycache__/google_file_search.cpython-314.pyc
-src/__pycache__/prompt_storage.cpython-314.pyc
+
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.venv/
+
+# Project-specific
+uploads/*
