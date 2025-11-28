@@ -124,6 +124,34 @@ python app.py
 
 The Flask app runs on `http://localhost:5000` with debug mode enabled.
 
+## Testing
+
+Run the unit test suite to validate core functionality:
+
+```bash
+pytest Testing/unit/test_google_file_search.py -v
+```
+
+The test suite includes comprehensive coverage for:
+- File Search Store creation, listing, and deletion
+- Document upload, indexing, listing, and removal
+- AI query processing with and without custom system prompts
+- Error handling and edge cases
+
+**Test Coverage:**
+- `TestCreateNewFileSearchStore` - Store management operations
+- `TestListAllFileSearchStores` - Store retrieval and listing
+- `TestDeleteFileSearchStore` - Store cleanup
+- `TestAddDocumentToStore` - Document upload and indexing
+- `TestListDocumentsInStore` - Document retrieval
+- `TestDeleteDocumentFromStore` - Document deletion
+- `TestAskStoreQuestion` - Query processing and system prompts
+
+Run with coverage reporting:
+```bash
+pytest Testing/unit/test_google_file_search.py --cov=src.google_file_search --cov-report=term-missing
+```
+
 ## Troubleshooting
 
 ### Chat input not clearing after sending
