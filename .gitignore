@@ -5,3 +5,4 @@ Google File Search Dashboard.code-workspace
 __pycache__/app.cpython-314.pyc
 __pycache__/google_file_search.cpython-314.pyc
 uploads/*
+.vscode/settings.json
