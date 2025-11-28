@@ -199,23 +199,19 @@ def ask_store_question(store_id: str, query: str, system_prompt: str = None) -> 
             file_search=file_search_config
         )
 
-        # --- 2. Build the contents with system instruction prepended if needed ---
-        if system_prompt:
-            # Prepend system instruction to query for better compliance
-            final_query = f"IMPORTANT: {system_prompt}\n\nQuestion: {query}"
-            print(f"[DEBUG] System instruction prepended to query: {system_prompt[:50]}...")
-        else:
-            final_query = query
-
-        # --- 3. Build GenerateContentConfig ---
+        # --- 2. Build GenerateContentConfig with system_instruction ---
         config_kwargs = {
             'tools': [file_search_tool]
         }
+        
+        if system_prompt:
+            config_kwargs['system_instruction'] = system_prompt
+            print(f"[DEBUG] System instruction set: {system_prompt[:50]}...")
 
-        # --- 4. Generate Content ---
+        # --- 3. Generate Content ---
         response = client.models.generate_content(
             model=MODEL,
-            contents=final_query,
+            contents=query,
             config=types.GenerateContentConfig(**config_kwargs)
         )
 
