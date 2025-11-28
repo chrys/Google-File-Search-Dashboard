@@ -25,9 +25,3 @@
     <p class="text-sm">Create one to get started.</p>
 </div>
 {% endfor %}
-
-<script>
-    function loadProjectDetails(storeId, displayName) {
-        htmx.ajax('GET', '/api/projects/' + storeId + '/documents', { target: '#project-details', swap: 'innerHTML' });
-    }
-</script>
