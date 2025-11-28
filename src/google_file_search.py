@@ -179,7 +179,7 @@ def ask_store_question(store_id: str, query: str, system_prompt: str = None) -> 
         The model's answer, potentially with citations.
     """
     
-    MODEL = "gemini-2.5-flash" # Use a model that supports the File Search tool
+    MODEL = "gemini-2.5-flash" # Supports File Search properly
     
     print(f"Querying store '{store_id}' with model {MODEL}...")
     if system_prompt:
@@ -187,27 +187,36 @@ def ask_store_question(store_id: str, query: str, system_prompt: str = None) -> 
     
     try:
         # --- 1. Configure the FileSearch Tool ---
-        # This tells the model to use the RAG system and points it to the store ID
-        file_search_tool = types.Tool(
-            file_search=types.FileSearch(
-                # Pass the store_id as a list
-                file_search_store_names=[store_id] 
-            )
+        from google.genai import types as genai_types
+        
+        # Create the file search configuration
+        file_search_config = genai_types.FileSearch(
+            file_search_store_names=[store_id]
+        )
+        
+        # Create tool with file_search
+        file_search_tool = genai_types.Tool(
+            file_search=file_search_config
         )
 
-        # --- 2. Build GenerateContentConfig with optional system instruction ---
-        config_dict = {
+        # --- 2. Build the contents with system instruction prepended if needed ---
+        if system_prompt:
+            # Prepend system instruction to query for better compliance
+            final_query = f"IMPORTANT: {system_prompt}\n\nQuestion: {query}"
+            print(f"[DEBUG] System instruction prepended to query: {system_prompt[:50]}...")
+        else:
+            final_query = query
+
+        # --- 3. Build GenerateContentConfig ---
+        config_kwargs = {
             'tools': [file_search_tool]
         }
-        
-        if system_prompt:
-            config_dict['system_instruction'] = system_prompt
 
-        # --- 3. Generate Content ---
+        # --- 4. Generate Content ---
         response = client.models.generate_content(
             model=MODEL,
-            contents=query,
-            config=types.GenerateContentConfig(**config_dict)
+            contents=final_query,
+            config=types.GenerateContentConfig(**config_kwargs)
         )
 
         # --- 4. Format and Return Response ---

@@ -129,10 +129,12 @@ def manage_project_prompt(store_id):
     """Get or set custom prompt for a project"""
     if request.method == 'POST':
         prompt = request.form.get('prompt', '')
+        print(f"[PROMPT] Saving prompt for store {store_id}: {prompt[:50]}...")
         prompt_storage.set_prompt(store_id, prompt)
         return jsonify({'success': True, 'message': 'Prompt saved'})
     
     prompt = prompt_storage.get_prompt(store_id)
+    print(f"[PROMPT] Loading prompt for store {store_id}: {prompt[:50] if prompt else 'None'}...")
     return jsonify({'prompt': prompt})
 
 # Chatcuments = gfs.list_documents_in_store(store_id)
@@ -141,17 +143,29 @@ def manage_project_prompt(store_id):
 # Chat
 @app.route('/api/chat', methods=['POST'])
 def ask_question():
+    import time
+    import logging
+    
     store_id = request.form.get('store_id')
     query = request.form.get('query')
     
     if not store_id or not query:
         return '', 400
     
+    # Record start time
+    start_time = time.time()
+    app.logger.info(f'[CHAT] Query started at {start_time:.3f} - Store: {store_id} | Query: {query[:50]}...')
+    
     # Get the custom prompt if it exists
     system_prompt = prompt_storage.get_prompt(store_id)
     
     # Generate answer with optional custom prompt
     answer_text = gfs.ask_store_question(store_id, query, system_prompt if system_prompt else None)
+    
+    # Calculate duration
+    end_time = time.time()
+    duration = end_time - start_time
+    app.logger.info(f'[CHAT] Query completed in {duration:.2f}s - Store: {store_id}')
     
     # Convert markdown to HTML
     answer_html = markdown.markdown(answer_text)

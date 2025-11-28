@@ -25,7 +25,11 @@ class PromptStorage:
         if os.path.exists(self.prompts_file):
             try:
                 with open(self.prompts_file, 'r') as f:
-                    prompts = json.load(f)
+                    content = f.read().strip()
+                    if not content:
+                        print(f"📝 Prompts file is empty at {self.prompts_file}. Starting with empty prompts.")
+                        return {}
+                    prompts = json.loads(content)
                     print(f"✅ Loaded {len(prompts)} prompts from {self.prompts_file}")
                     return prompts
             except (json.JSONDecodeError, IOError) as e:

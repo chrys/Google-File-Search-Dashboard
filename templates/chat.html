@@ -47,10 +47,19 @@
         document.getElementById('chat-header-title').innerText = 'Chatting with: ' + displayName;
         document.getElementById('chat-input').disabled = false;
         document.getElementById('chat-submit').disabled = false;
-        document.getElementById('chat-messages').innerHTML = ''; // Clear previous chat
-
-        // Highlight selected
-        document.querySelectorAll('.chat-project-item').forEach(el => el.classList.remove('bg-blue-50', 'border-blue-200'));
-        document.getElementById('chat-project-' + storeId).classList.add('bg-blue-50', 'border-blue-200');
+        
+        // Clear previous chat and messages container
+        const chatMessages = document.getElementById('chat-messages');
+        chatMessages.innerHTML = '';
+        
+        // Remove highlight from all projects
+        document.querySelectorAll('.chat-project-item').forEach(el => {
+            el.classList.remove('bg-blue-50', 'border-blue-200');
+        });
+        
+        // Highlight selected project - use data attribute to avoid selector issues with slashes
+        document.querySelectorAll('[data-store-id="' + storeId + '"]').forEach(el => {
+            el.classList.add('bg-blue-50', 'border-blue-200');
+        });
     }
 </script>
