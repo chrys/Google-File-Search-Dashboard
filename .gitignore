@@ -16,3 +16,4 @@ __pycache__/
 
 # Project-specific
 uploads/*
+git_ignore/
