@@ -75,13 +75,13 @@ if not os.path.exists(UPLOAD_FOLDER):
 prompt_storage = get_prompt_storage()
 
 # Pydantic models
+class ProjectCreateRequest(BaseModel):
+    display_name: str
+
 class ChatRequest(BaseModel):
     store_id: str
     query: str
     system_prompt: str = None
-class ChatRequest(BaseModel):
-    store_id: str
-    query: str
 
 class ChatResponse(BaseModel):
     user_message: str
@@ -232,31 +232,26 @@ def delete_project(store_id: str, username: str = Depends(verify_credentials)):
         return {"status": "success", "message": f"Store {store_id} deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-@app.post("/api/chat", response_model=ChatResponse)
-def ask_question(request: ChatRequest, username: str = Depends(verify_credentials)):
-    """Ask a question to a file search store"""
+
+# --- Prompt Endpoints ---
+
+@app.get("/api/projects/{store_id:path}/prompt")
+def get_project_prompt(store_id: str, username: str = Depends(verify_credentials)):
+    """Get custom prompt for a project"""
     try:
-        if not request.store_id or not request.query:
-            raise HTTPException(status_code=400, detail="store_id and query are required")
-        
-        # Use provided system_prompt or get from stored prompts
-        system_prompt = request.system_prompt or prompt_storage.get_prompt(request.store_id)
-        
-        # Generate answer with optional custom prompt
-        answer_text = gfs.ask_store_question(request.store_id, request.query, system_prompt if system_prompt else None)
-        
-        # Convert markdown to HTML
-        answer_html = markdown.markdown(answer_text)
-        
-        return ChatResponse(
-            user_message=request.query,
-            bot_response=answer_text,
-            bot_response_html=answer_html
-        )
-    except HTTPException:
-        raise
+        prompt = prompt_storage.get_prompt(store_id)
+        return {"prompt": prompt or ""}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/{store_id:path}/prompt")
+def set_project_prompt(store_id: str, request: dict, username: str = Depends(verify_credentials)):
+    """Set custom prompt for a project"""
+    try:
+        prompt = request.get("prompt", "")
+        prompt_storage.set_prompt(store_id, prompt)
+        return {"status": "success", "message": "Prompt saved"}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- Chat Endpoints ---
@@ -268,8 +263,19 @@ def ask_question(request: ChatRequest, username: str = Depends(verify_credential
         if not request.store_id or not request.query:
             raise HTTPException(status_code=400, detail="store_id and query are required")
         
-        # Generate answer
-        answer_text = gfs.ask_store_question(request.store_id, request.query)
+        # Use provided system_prompt or get from stored prompts
+        system_prompt = request.system_prompt
+        if not system_prompt:
+            system_prompt = prompt_storage.get_prompt(request.store_id)
+        
+        print(f"[API] Query - Store: {request.store_id}, Prompt: {system_prompt[:50] if system_prompt else 'None'}...")
+        
+        # Generate answer with optional custom prompt
+        answer_text = gfs.ask_store_question(
+            request.store_id, 
+            request.query, 
+            system_prompt if system_prompt else None
+        )
         
         # Convert markdown to HTML
         answer_html = markdown.markdown(answer_text)
@@ -282,7 +288,8 @@ def ask_question(request: ChatRequest, username: str = Depends(verify_credential
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[API ERROR] {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 # Root endpoint
 @app.get("/")

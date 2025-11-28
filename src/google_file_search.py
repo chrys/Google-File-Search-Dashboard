@@ -348,13 +348,13 @@ def main():
     #             delete_document_from_store(doc_resource_name)
     
     #get all stores and list ttheir documents
-    # stores = list_all_file_search_stores()
-    # if stores:
-    #     for store in stores:
-    #         store_id = store.name
-    #         print(f"Processing store: {store_id}")
-    #         #list documents in store
-    #         list_documents_in_store(store_id)
+    stores = list_all_file_search_stores()
+    if stores:
+        for store in stores:
+            store_id = store.name
+            print(f"Processing store: {store_id}")
+            #list documents in store
+            list_documents_in_store(store_id)
             
     # delete_document_from_store("fileSearchStores/mysecondfilesearchstore-1m3ju15v7hjz/documents/data2txt-dr72i7yy967c")
     

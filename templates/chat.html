@@ -26,7 +26,10 @@
 
         <!-- Input Area -->
         <div class="p-4 border-t border-gray-100 bg-white rounded-b-xl">
-            <form hx-post="/api/chat" hx-target="#chat-messages" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful) { document.getElementById('chat-input').value = ''; document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight; }" class="flex gap-2">
+            <form hx-post="/api/chat" hx-target="#chat-messages" hx-swap="beforeend" 
+                hx-on::before-request="showTypingIndicator()" 
+                hx-on::after-request="hideTypingIndicator(); if(event.detail.successful) { document.getElementById('chat-input').value = ''; document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight; }" 
+                class="flex gap-2">
                 <input type="hidden" name="store_id" id="chat-store-id">
                 <input type="hidden" name="system_prompt" id="chat-system-prompt" value="">
                 <input type="text" name="query" placeholder="Ask a question..."
@@ -78,5 +81,38 @@
                 }
             })
             .catch(err => console.error('Error loading prompt:', err));
+    }
+    
+    function showTypingIndicator() {
+        // Create typing indicator element
+        const typingDiv = document.createElement('div');
+        typingDiv.id = 'typing-indicator';
+        typingDiv.className = 'flex flex-col gap-1 items-start';
+        typingDiv.innerHTML = `
+            <div class="max-w-[80%] rounded-2xl bg-gray-100 text-gray-800 rounded-bl-none">
+                <div class="typing-indicator">
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                    <div class="typing-dot"></div>
+                </div>
+            </div>
+            <span class="text-xs text-gray-400 px-1">Gemini</span>
+        `;
+        
+        document.getElementById('chat-messages').appendChild(typingDiv);
+        
+        // Scroll to bottom
+        const chatMessages = document.getElementById('chat-messages');
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        
+        console.log('[CHAT] Typing indicator shown');
+    }
+    
+    function hideTypingIndicator() {
+        const typingIndicator = document.getElementById('typing-indicator');
+        if (typingIndicator) {
+            typingIndicator.remove();
+            console.log('[CHAT] Typing indicator hidden');
+        }
     }
 </script>
