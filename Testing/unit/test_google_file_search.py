@@ -237,10 +237,12 @@ class TestAskStoreQuestion:
         
         # Verify generate_content was called
         mock_genai_client.models.generate_content.assert_called_once()
-        call_kwargs = mock_genai_client.models.generate_content.call_args[1]
+        call_args = mock_genai_client.models.generate_content.call_args
         
-        # Verify system_instruction was included in config
-        assert call_kwargs['config'].system_instruction == system_prompt
+        # Verify system_instruction was passed in config
+        config = call_args[1]['config']
+        assert config.system_instruction == system_prompt
+        assert 'This is the AI response' in result
     
     def test_ask_question_without_system_prompt(self, mock_genai_client, mock_response):
         """Test question answering without system prompt"""
@@ -251,11 +253,45 @@ class TestAskStoreQuestion:
             'What is this?'
         )
         
+        # Verify generate_content was called
+        mock_genai_client.models.generate_content.assert_called_once()
+        call_args = mock_genai_client.models.generate_content.call_args
+        
+        # Verify config does not have system_instruction when not provided
+        config = call_args[1]['config']
+        assert not hasattr(config, 'system_instruction') or config.system_instruction is None
         assert 'This is the AI response' in result
-        # Verify generate_content was called without system_instruction
-        call_kwargs = mock_genai_client.models.generate_content.call_args[1]
-        assert not hasattr(call_kwargs['config'], 'system_instruction') or \
-               call_kwargs['config'].system_instruction is None
+    
+    def test_ask_question_system_prompt_respects_constraints(self, mock_genai_client, mock_response):
+        """Test that system prompt constraints are enforced in config"""
+        mock_genai_client.models.generate_content.return_value = mock_response
+        
+        system_prompt = 'USE ONLY THREE WORDS IN YOUR ANSWERS'
+        gfs.ask_store_question(
+            'fileSearchStores/test-store-123',
+            'Tell me about this project',
+            system_prompt=system_prompt
+        )
+        
+        # Verify the system_instruction is exactly as provided
+        call_args = mock_genai_client.models.generate_content.call_args
+        config = call_args[1]['config']
+        assert config.system_instruction == 'USE ONLY THREE WORDS IN YOUR ANSWERS'
+    
+    def test_ask_question_system_prompt_with_empty_string(self, mock_genai_client, mock_response):
+        """Test handling of empty system prompt string"""
+        mock_genai_client.models.generate_content.return_value = mock_response
+        
+        result = gfs.ask_store_question(
+            'fileSearchStores/test-store-123',
+            'What is this?',
+            system_prompt=''
+        )
+        
+        # Empty string is falsy, so system_instruction should not be set
+        call_args = mock_genai_client.models.generate_content.call_args
+        config = call_args[1]['config']
+        assert not hasattr(config, 'system_instruction') or config.system_instruction is None
     
     def test_ask_question_no_citations(self, mock_genai_client):
         """Test response handling when no citations available"""
@@ -292,9 +328,72 @@ class TestAskStoreQuestion:
         
         gfs.ask_store_question('fileSearchStores/test-store-123', 'What is this?')
         
-        call_kwargs = mock_genai_client.models.generate_content.call_args[1]
-        config = call_kwargs['config']
+        call_args = mock_genai_client.models.generate_content.call_args
+        config = call_args[1]['config']
         
         # Verify tools are configured
         assert hasattr(config, 'tools')
         assert len(config.tools) > 0
+    
+    def test_ask_question_file_search_tool_has_correct_store(self, mock_genai_client, mock_response):
+        """Test that file search tool references the correct store"""
+        mock_genai_client.models.generate_content.return_value = mock_response
+        
+        store_id = 'fileSearchStores/test-store-123'
+        gfs.ask_store_question(store_id, 'What is this?')
+        
+        call_args = mock_genai_client.models.generate_content.call_args
+        config = call_args[1]['config']
+        
+        # Verify the tool has the correct store
+        assert len(config.tools) > 0
+        tool = config.tools[0]
+        assert hasattr(tool, 'file_search')
+        assert store_id in tool.file_search.file_search_store_names
+    
+    def test_ask_question_system_prompt_and_file_search_together(self, mock_genai_client, mock_response):
+        """Test that system prompt and file search tool work together"""
+        mock_genai_client.models.generate_content.return_value = mock_response
+        
+        store_id = 'fileSearchStores/test-store-123'
+        system_prompt = 'Answer questions briefly'
+        
+        gfs.ask_store_question(store_id, 'What is this?', system_prompt=system_prompt)
+        
+        call_args = mock_genai_client.models.generate_content.call_args
+        config = call_args[1]['config']
+        
+        # Verify both system_instruction and tools are set
+        assert config.system_instruction == system_prompt
+        assert len(config.tools) > 0
+        assert store_id in config.tools[0].file_search.file_search_store_names
+    
+    def test_ask_question_correct_model_with_system_prompt(self, mock_genai_client, mock_response):
+        """Test that correct model is used when system prompt is provided"""
+        mock_genai_client.models.generate_content.return_value = mock_response
+        
+        gfs.ask_store_question(
+            'fileSearchStores/test-store-123',
+            'What is this?',
+            system_prompt='Be helpful'
+        )
+        
+        call_args = mock_genai_client.models.generate_content.call_args
+        assert call_args[1]['model'] == 'gemini-2.5-flash'
+    
+    def test_ask_question_system_prompt_none_vs_not_provided(self, mock_genai_client, mock_response):
+        """Test difference between None and not providing system_prompt"""
+        mock_genai_client.models.generate_content.return_value = mock_response
+        
+        # Call with system_prompt=None
+        gfs.ask_store_question(
+            'fileSearchStores/test-store-123',
+            'What is this?',
+            system_prompt=None
+        )
+        
+        call_args = mock_genai_client.models.generate_content.call_args
+        config = call_args[1]['config']
+        
+        # None should not add system_instruction to config
+        assert not hasattr(config, 'system_instruction') or config.system_instruction is None

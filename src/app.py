@@ -144,10 +144,10 @@ def manage_project_prompt(store_id):
 @app.route('/api/chat', methods=['POST'])
 def ask_question():
     import time
-    import logging
     
     store_id = request.form.get('store_id')
     query = request.form.get('query')
+    system_prompt = request.form.get('system_prompt', '')  # Get prompt from frontend
     
     if not store_id or not query:
         return '', 400
@@ -156,10 +156,8 @@ def ask_question():
     start_time = time.time()
     app.logger.info(f'[CHAT] Query started at {start_time:.3f} - Store: {store_id} | Query: {query[:50]}...')
     
-    # Get the custom prompt if it exists
-    system_prompt = prompt_storage.get_prompt(store_id)
-    
     # Generate answer with optional custom prompt
+    # No need to load from prompt_storage anymore - it's already loaded on frontend
     answer_text = gfs.ask_store_question(store_id, query, system_prompt if system_prompt else None)
     
     # Calculate duration

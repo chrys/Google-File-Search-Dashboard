@@ -28,6 +28,7 @@
         <div class="p-4 border-t border-gray-100 bg-white rounded-b-xl">
             <form hx-post="/api/chat" hx-target="#chat-messages" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful) { document.getElementById('chat-input').value = ''; document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight; }" class="flex gap-2">
                 <input type="hidden" name="store_id" id="chat-store-id">
+                <input type="hidden" name="system_prompt" id="chat-system-prompt" value="">
                 <input type="text" name="query" placeholder="Ask a question..."
                     class="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     disabled id="chat-input">
@@ -61,5 +62,21 @@
         document.querySelectorAll('[data-store-id="' + storeId + '"]').forEach(el => {
             el.classList.add('bg-blue-50', 'border-blue-200');
         });
+        
+        // Load custom prompt for this project
+        console.log('[CHAT] Project selected, loading custom prompt...');
+        fetch('/api/projects/' + encodeURIComponent(storeId) + '/prompt')
+            .then(r => r.json())
+            .then(data => {
+                if (data.prompt) {
+                    console.log('[CHAT] Custom prompt loaded:', data.prompt.substring(0, 50) + '...');
+                    // Store prompt in hidden form field
+                    document.getElementById('chat-system-prompt').value = data.prompt;
+                } else {
+                    console.log('[CHAT] No custom prompt for this project');
+                    document.getElementById('chat-system-prompt').value = '';
+                }
+            })
+            .catch(err => console.error('Error loading prompt:', err));
     }
 </script>
