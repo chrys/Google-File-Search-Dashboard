@@ -6,5 +6,7 @@ markdown
 fastapi
 uvicorn
 python-multipart
+gunicorn
 pytest
 pytest-mock
+werkzeug

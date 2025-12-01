@@ -1,25 +1,48 @@
 import os
 import sys
+import time
 import markdown
 from flask import Flask, render_template, request, jsonify, redirect, url_for
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Add current directory to path to import google_file_search from src
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import google_file_search as gfs
 from prompt_storage import get_prompt_storage
 
+# Add parent directory to path for config
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import get_config
+
 # Setup template and static folders to point to parent directory
 template_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'templates')
 static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'static')
 app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
-CORS(app)
+
+# Load configuration based on environment
+env = os.getenv('FLASK_ENV', 'development')
+app.config.from_object(get_config(env))
+
+# Handle reverse proxy headers (for /rag/ prefix behind nginx)
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=1,
+    x_proto=1,
+    x_host=1,
+    x_prefix=1
+)
+
+# Setup CORS with environment-specific origins
+if env == 'production':
+    CORS(app, resources={r"/api/*": {"origins": app.config['CORS_ORIGINS']}})
+else:
+    CORS(app)
 
 # Initialize prompt storage
 prompt_storage = get_prompt_storage()
 
-# Configuration
 # Configuration
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads')
 if not os.path.exists(UPLOAD_FOLDER):
