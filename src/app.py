@@ -25,6 +25,19 @@ app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 env = os.getenv('FLASK_ENV', 'development')
 app.config.from_object(get_config(env))
 
+# Custom WSGI middleware to strip /rag prefix from PATH_INFO
+class StripPrefixMiddleware:
+    def __init__(self, wsgi_app, prefix):
+        self.wsgi_app = wsgi_app
+        self.prefix = prefix
+    
+    def __call__(self, environ, start_response):
+        path = environ.get('PATH_INFO', '')
+        if path.startswith(self.prefix):
+            environ['PATH_INFO'] = path[len(self.prefix):] or '/'
+            environ['SCRIPT_NAME'] = self.prefix
+        return self.wsgi_app(environ, start_response)
+
 # Handle reverse proxy headers (for /rag/ prefix behind nginx)
 app.wsgi_app = ProxyFix(
     app.wsgi_app,
@@ -34,6 +47,10 @@ app.wsgi_app = ProxyFix(
     x_prefix=1,
     x_port=1
 )
+
+# Strip /rag prefix if present (when behind nginx at /rag/)
+if env == 'production':
+    app.wsgi_app = StripPrefixMiddleware(app.wsgi_app, '/rag')
 
 # Setup CORS with environment-specific origins
 if env == 'production':
