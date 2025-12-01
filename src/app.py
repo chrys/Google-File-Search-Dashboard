@@ -31,7 +31,8 @@ app.wsgi_app = ProxyFix(
     x_for=1,
     x_proto=1,
     x_host=1,
-    x_prefix=1
+    x_prefix=1,
+    x_port=1
 )
 
 # Setup CORS with environment-specific origins
