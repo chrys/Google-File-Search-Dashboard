@@ -7,7 +7,7 @@
             <h3 class="font-medium text-gray-800">{{ store.display_name }}</h3>
             <p class="text-xs text-gray-500 mt-1">ID: {{ store.name.split('/')[-1] }}</p>
         </div>
-        <button hx-delete="/api/projects/{{ store.name }}" hx-target="#project-list" hx-swap="innerHTML"
+        <button hx-delete="{{ url_prefix }}/api/projects/{{ store.name }}" hx-target="#project-list" hx-swap="innerHTML"
             hx-confirm="Are you sure you want to delete this project?"
             class="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
             onclick="event.stopPropagation()">

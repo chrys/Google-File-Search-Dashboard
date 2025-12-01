@@ -5,7 +5,7 @@
             <h2 class="font-semibold text-gray-700">{{ project_name }}</h2>
             <p class="text-xs text-gray-500">{{ store_id }}</p>
         </div>
-        <form hx-post="/api/projects/{{ store_id }}/documents" hx-encoding="multipart/form-data"
+        <form hx-post="{{ url_prefix }}/api/projects/{{ store_id }}/documents" hx-encoding="multipart/form-data"
             hx-target="#document-list" hx-swap="innerHTML" class="flex items-center gap-2">
             <input type="file" name="file" required
                 class="text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
