@@ -26,7 +26,8 @@ def load_valid_users():
     """Load valid users from environment variable"""
     users_str = os.getenv("API_USERS")
     if not users_str:
-        raise ValueError("API_USERS environment variable not set in .env file")
+        print("WARNING: API_USERS environment variable not set in .env file - API will be accessible without authentication in this mode")
+        return {}
     
     users_dict = {}
     for user_pair in users_str.split(","):
@@ -35,7 +36,7 @@ def load_valid_users():
             users_dict[username.strip()] = password.strip()
     
     if not users_dict:
-        raise ValueError("No valid users found in API_USERS environment variable")
+        print("WARNING: No valid users found in API_USERS environment variable")
     
     return users_dict
 
@@ -43,6 +44,10 @@ VALID_USERS = load_valid_users()
 
 def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
     """Verify basic auth credentials"""
+    # If no users configured, skip authentication
+    if not VALID_USERS:
+        return "anonymous"
+    
     username = credentials.username
     password = credentials.password
     
