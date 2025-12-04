@@ -11,7 +11,7 @@ dotenv.load_dotenv()
 API_KEY = os.getenv("GOOGLE_API_KEY")
 
 if not API_KEY:
-    raise ValueError("GOOGLE_API_KEY environment variable not set.")
+    print("WARNING: GOOGLE_API_KEY environment variable not set - API functions will fail at runtime")
 else:
     os.environ["GOOGLE_API_KEY"] = API_KEY
 
