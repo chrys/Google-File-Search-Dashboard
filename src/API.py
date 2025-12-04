@@ -7,6 +7,7 @@ import sys
 import markdown
 from werkzeug.utils import secure_filename
 import dotenv
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 # Add current directory to path to import google_file_search from src
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -65,6 +66,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add middleware to handle X-Forwarded-* headers
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["fasolaki.com", "www.fasolaki.com"])
+
+# In production, the API should be aware of the /rag-api prefix
+# This is handled by nginx stripping it, so no changes needed here
 
 # Configuration
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads')
