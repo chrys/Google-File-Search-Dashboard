@@ -285,42 +285,7 @@ server {
 
         }
 
-	# RAG API - FastAPI endpoint
-	location /rag-api/ {
-    	# Strip the /rag-api prefix before passing to the app
-    	rewrite ^/rag-api/(.*)$ /$1 break;
-    	rewrite ^/rag-api/?$ / break;
-    
-    	# Pass to Gunicorn socket
-    	proxy_pass http://unix:/run/rag-api-dashboard/rag-api-dashboard.sock;
-    
-    	# Headers
-    	proxy_set_header Host $host;
-    	proxy_set_header X-Real-IP $remote_addr;
-    	proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    	proxy_set_header X-Forwarded-Proto $scheme;
-    	proxy_set_header X-Forwarded-Prefix /rag-api;
-    	proxy_set_header X-Script-Name /rag-api;
-    	proxy_set_header Upgrade $http_upgrade;
-    	proxy_set_header Connection "upgrade";
-    
-    	# Timeouts for long-running operations
-    	proxy_connect_timeout 300s;
-    	proxy_send_timeout 300s;
-    	proxy_read_timeout 300s;
-    
-    	# Buffer settings for large responses
-    	proxy_buffering on;
-    	proxy_buffer_size 128k;
-    	proxy_buffers 4 256k;
-    	proxy_busy_buffers_size 256k;
-	}
-
-
-
-        # Django App (catch-all - MUST be last)
-
-        location / {
+	# Django App (catch-all - MUST be last)        location / {
                 proxy_pass http://unix:/run/fasolaki.sock;
                 proxy_set_header Host $host;
                 proxy_set_header X-Real-IP $remote_addr;
