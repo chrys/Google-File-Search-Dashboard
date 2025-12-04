@@ -17,3 +17,4 @@ __pycache__/
 # Project-specific
 uploads/*
 git_ignore/
+Documentation/DEPLOYMENT_GUIDE.md
