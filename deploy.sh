@@ -16,12 +16,12 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# 1. Pull latest code
-echo -e "${YELLOW}[1/6]${NC} Pulling latest code from repository..."
-cd /srv/rag-dashboard
-sudo git pull origin main
-echo -e "${GREEN}✓ Code pulled${NC}"
-echo ""
+# 0. Pull latest code
+# echo -e "${YELLOW}[1/6]${NC} Pulling latest code from repository..."
+# cd /srv/rag-dashboard
+# sudo git pull origin main
+# echo -e "${GREEN}✓ Code pulled${NC}"
+# echo ""
 
 # 2. Install/update dependencies
 echo -e "${YELLOW}[2/6]${NC} Installing/updating Python dependencies..."
