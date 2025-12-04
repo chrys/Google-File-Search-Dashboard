@@ -1,0 +1,53 @@
+[Unit]
+Description=Google File Search Dashboard - RAG Application
+After=network.target
+Documentation=https://github.com/your-repo/Google-File-Search-Dashboard
+
+[Service]
+Type=notify
+User=deploy
+Group=www-data
+WorkingDirectory=/srv/rag-dashboard
+
+# Environment variables
+Environment="PATH=/srv/rag-dashboard/.venv/bin"
+Environment="FLASK_ENV=production"
+EnvironmentFile=/srv/rag-dashboard/.env
+
+# Gunicorn startup command
+ExecStart=/srv/rag-dashboard/.venv/bin/gunicorn \
+    --workers 4 \
+    --worker-class sync \
+    --bind unix:/run/rag-dashboard/rag-dashboard.sock \
+    --timeout 120 \
+    --access-logfile /var/log/rag-dashboard/access.log \
+    --error-logfile /var/log/rag-dashboard/error.log \
+    --log-level info \
+    'wsgi:app'
+
+# Reload on config changes
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# Service restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/rag-dashboard /var/log/rag-dashboard /run/rag-dashboard
+
+# Process management
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rag-dashboard
+KillMode=mixed
+KillSignal=SIGQUIT
+
+[Install]
+WantedBy=multi-user.target
+

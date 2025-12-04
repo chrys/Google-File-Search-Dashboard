@@ -1,0 +1,45 @@
+[Unit]
+Description=Google File Search Dashboard - RAG API
+After=network.target rag-dashboard.service
+Documentation=https://github.com/your-repo/Google-File-Search-Dashboard
+
+[Service]
+Type=simple
+User=deploy
+Group=www-data
+WorkingDirectory=/srv/rag-dashboard
+
+# Environment variables
+Environment="PATH=/srv/rag-dashboard/.venv/bin"
+Environment="FLASK_ENV=production"
+EnvironmentFile=/srv/rag-dashboard/.env
+
+# Uvicorn startup command (native ASGI server for FastAPI)
+# Binds to localhost:8002 which Nginx will proxy to
+ExecStart=/srv/rag-dashboard/.venv/bin/uvicorn \
+    --host 127.0.0.1 \
+    --port 8002 \
+    --log-level info \
+    src.API:app
+
+# Reload on config changes
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# Service restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Security settings
+NoNewPrivileges=true
+
+# Process management
+StandardOutput=file:/var/log/rag-api-dashboard/stdout.log
+StandardError=file:/var/log/rag-api-dashboard/stderr.log
+SyslogIdentifier=rag-api-dashboard
+KillMode=mixed
+KillSignal=SIGQUIT
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,48 @@
+[Unit]
+Description=Google File Search Dashboard - RAG API
+After=network.target rag-dashboard.service
+Documentation=https://github.com/your-repo/Google-File-Search-Dashboard
+
+[Service]
+Type=simple
+User=deploy
+Group=www-data
+WorkingDirectory=/srv/rag-dashboard
+
+# Environment variables
+Environment="PATH=/srv/rag-dashboard/.venv/bin"
+Environment="FLASK_ENV=production"
+EnvironmentFile=/srv/rag-dashboard/.env
+
+# Gunicorn startup with uvicorn workers for FastAPI
+ExecStart=/srv/rag-dashboard/.venv/bin/gunicorn \
+    --workers 2 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind unix:/run/rag-api-dashboard/rag-api-dashboard.sock \
+    --timeout 120 \
+    --access-logfile /var/log/rag-api-dashboard/access.log \
+    --error-logfile /var/log/rag-api-dashboard/error.log \
+    --log-level debug \
+    src.API:app
+
+# Reload on config changes
+ExecReload=/bin/kill -s HUP $MAINPID
+
+# Service restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Security settings
+NoNewPrivileges=true
+
+# Process management
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rag-api-dashboard
+KillMode=mixed
+KillSignal=SIGQUIT
+
+[Install]
+WantedBy=multi-user.target
