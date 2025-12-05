@@ -10,11 +10,12 @@ class PromptStorage:
         Initialize prompt storage
         
         Args:
-            data_dir: Directory to store prompts.json file. Defaults to project root.
+            data_dir: Directory to store prompts.json file. Defaults to project root/configuration.
         """
         if data_dir is None:
-            # Get the parent directory of src folder (project root)
-            data_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            # Get the project root (parent of src) then add configuration subdirectory
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            data_dir = os.path.join(project_root, 'configuration')
         
         self.data_dir = data_dir
         self.prompts_file = os.path.join(data_dir, 'prompts.json')

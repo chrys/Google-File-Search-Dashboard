@@ -77,6 +77,14 @@
                 <input type="text" name="display_name" required
                     class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
             </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Storage Type</label>
+                <select name="storage_type" required
+                    class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="google">Google File Search</option>
+                    <option value="local">Locally</option>
+                </select>
+            </div>
             <div class="flex justify-end gap-2">
                 <button type="button" onclick="document.getElementById('create-project-modal').classList.add('hidden')"
                     class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md">Cancel</button>

@@ -1,0 +1,34 @@
+{
+  "local_20251205_134004_my_documents": {
+    "id": "local_20251205_134004_my_documents",
+    "display_name": "My Documents",
+    "created_at": "2025-12-05T13:40:04.162754",
+    "documents": {
+      "YourPlanner_Project.pdf": {
+        "indexed_at": "2025-12-05T18:30:01.500579"
+      }
+    }
+  },
+  "local_20251205_172916_debug_test_project": {
+    "id": "local_20251205_172916_debug_test_project",
+    "display_name": "Debug Test Project",
+    "created_at": "2025-12-05T17:29:16.743469",
+    "documents": {
+      "debug_doc.txt": {
+        "indexed_at": "2025-12-05T17:29:21.242826"
+      }
+    }
+  },
+  "local_20251205_181626_deletion_test_project": {
+    "id": "local_20251205_181626_deletion_test_project",
+    "display_name": "Deletion Test Project",
+    "created_at": "2025-12-05T18:16:26.623514",
+    "documents": {}
+  },
+  "local_20251205_182431_deletion_test_project": {
+    "id": "local_20251205_182431_deletion_test_project",
+    "display_name": "Deletion Test Project",
+    "created_at": "2025-12-05T18:24:31.722408",
+    "documents": {}
+  }
+}

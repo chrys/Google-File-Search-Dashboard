@@ -11,10 +11,12 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import google_file_search as gfs
 from prompt_storage import get_prompt_storage
+from local_project_storage import get_local_project_storage
 
 # Add parent directory to path for config
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import get_config
+from local_rag import get_rag_engine
 
 # Setup template and static folders to point to parent directory
 template_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'templates')
@@ -67,6 +69,9 @@ else:
 # Initialize prompt storage
 prompt_storage = get_prompt_storage()
 
+# Initialize local project storage
+local_project_storage = get_local_project_storage()
+
 # Configuration
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads')
 if not os.path.exists(UPLOAD_FOLDER):
@@ -90,84 +95,301 @@ def chat():
 # Projects (Stores)
 @app.route('/api/projects', methods=['GET'])
 def list_projects():
-    stores = gfs.list_all_file_search_stores()
+    # Get Google stores
+    google_stores = gfs.list_all_file_search_stores()
+    
+    # Get local projects and convert to store-like objects
+    local_projects = local_project_storage.list_projects()
+    local_stores = [
+        type('Store', (), {
+            'name': project['id'],
+            'display_name': project['display_name'],
+            'create_time': project['created_at'],
+            'storage_type': 'local'
+        })()
+        for project in local_projects
+    ]
+    
+    # Combine both lists
+    all_stores = google_stores + local_stores
+    
     list_type = request.args.get('type', 'admin')
     
     if list_type == 'chat':
-        return render_template('partials/chat_project_list.html', stores=stores)
-    return render_template('partials/project_list.html', stores=stores)
+        return render_template('partials/chat_project_list.html', stores=all_stores)
+    return render_template('partials/project_list.html', stores=all_stores)
 
 @app.route('/api/projects', methods=['POST'])
 def create_project():
     display_name = request.form.get('display_name')
-    if display_name:
-        gfs.create_new_file_search_store(display_name)
+    storage_type = request.form.get('storage_type', 'google')  # Default to Google
     
-    # Return updated list
-    stores = gfs.list_all_file_search_stores()
-    return render_template('partials/project_list.html', stores=stores)
+    print(f"[CREATE PROJECT] display_name={display_name}, storage_type={storage_type}")
+    
+    if display_name:
+        if storage_type == 'local':
+            # Create local project
+            print(f"[CREATE PROJECT] Creating local project...")
+            local_project_storage.create_project(display_name)
+            print(f"[CREATE PROJECT] Local project created successfully")
+        else:
+            # Create Google File Search store
+            print(f"[CREATE PROJECT] Creating Google store...")
+            gfs.create_new_file_search_store(display_name)
+    
+    # Return updated combined list
+    google_stores = gfs.list_all_file_search_stores()
+    local_projects = local_project_storage.list_projects()
+    local_stores = [
+        type('Store', (), {
+            'name': project['id'],
+            'display_name': project['display_name'],
+            'create_time': project['created_at'],
+            'storage_type': 'local'
+        })()
+        for project in local_projects
+    ]
+    
+    all_stores = google_stores + local_stores
+    return render_template('partials/project_list.html', stores=all_stores)
 
 @app.route('/api/projects/<path:store_id>', methods=['DELETE'])
 def delete_project(store_id):
-    gfs.delete_file_search_store(store_id)
+    # Check if it's a local project
+    if store_id.startswith('local_'):
+        local_project_storage.delete_project(store_id)
+    else:
+        # It's a Google store
+        gfs.delete_file_search_store(store_id)
     
-    # Return updated list
-    stores = gfs.list_all_file_search_stores()
-    return render_template('partials/project_list.html', stores=stores)
+    # Return updated combined list
+    google_stores = gfs.list_all_file_search_stores()
+    local_projects = local_project_storage.list_projects()
+    local_stores = [
+        type('Store', (), {
+            'name': project['id'],
+            'display_name': project['display_name'],
+            'create_time': project['created_at'],
+            'storage_type': 'local'
+        })()
+        for project in local_projects
+    ]
+    
+    all_stores = google_stores + local_stores
+    return render_template('partials/project_list.html', stores=all_stores)
 
 # Documents
 @app.route('/api/projects/<path:store_id>/documents', methods=['GET'])
 def list_documents(store_id):
-    documents = gfs.list_documents_in_store(store_id)
-    # We need to find the project name to display it
-    # This is a bit inefficient, but we don't have a direct "get store" function in the helper yet
-    # We can pass it from the frontend or fetch all stores.
-    # For now, let's just pass the store_id as the name if we can't find it, or fetch all.
-    # Actually, the frontend `loadProjectDetails` passes `displayName` but we are using HTMX GET.
-    # Let's just use the store_id or fetch all to find the name.
-    
-    project_name = "Project Documents"
-    stores = gfs.list_all_file_search_stores()
-    for store in stores:
-        if store.name == store_id:
-            project_name = store.display_name
-            break
-            
-    return render_template('partials/document_list.html', documents=documents, store_id=store_id, project_name=project_name)
+    # Check if it's a local project
+    if store_id.startswith('local_'):
+        # Get local project documents
+        local_projects = local_project_storage.list_projects()
+        project = next((p for p in local_projects if p['id'] == store_id), None)
+        
+        if not project:
+            return 'Project not found', 404
+        
+        documents = [
+            {
+                'name': doc_name,
+                'display_name': doc_name,
+                'mime_type': 'document',
+                'indexed_at': doc_info.get('indexed_at') if isinstance(doc_info, dict) else None,
+                'state': type('State', (), {'name': 'INDEXED'})()  # Mock state object for template compatibility
+            }
+            for doc_name, doc_info in (
+                ((d, project['documents'].get(d)) if isinstance(project['documents'], dict) else (d, {}))
+                for d in project.get('documents', []) if d
+            )
+        ]
+        
+        return render_template('partials/document_list.html', 
+                             documents=documents, 
+                             store_id=store_id, 
+                             project_name=project['display_name'],
+                             storage_type='local')
+    else:
+        # Google store documents
+        documents = gfs.list_documents_in_store(store_id)
+        
+        project_name = "Project Documents"
+        stores = gfs.list_all_file_search_stores()
+        for store in stores:
+            if store.name == store_id:
+                project_name = store.display_name
+                break
+        
+        return render_template('partials/document_list.html', 
+                             documents=documents, 
+                             store_id=store_id, 
+                             project_name=project_name,
+                             storage_type='google')
 
 @app.route('/api/projects/<path:store_id>/documents', methods=['POST'])
 def upload_document(store_id):
+    """Upload and index a document for a project"""
     if 'file' not in request.files:
         return 'No file part', 400
+    
     file = request.files['file']
     if file.filename == '':
         return 'No selected file', 400
-    if file:
+    
+    if not file:
+        return 'Invalid file', 400
+    
+    filepath = None
+    try:
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        try:
+        # Check if it's a local project
+        if store_id.startswith('local_'):
+            print(f"[UPLOAD] Processing local project: {store_id}, file: {filename}")
+            
+            # Get RAG engine for this project
+            # NOTE: Don't clear cache here - we want to reuse the same engine for consistency
+            rag_engine = get_rag_engine(store_id)
+            
+            # Index the document (creates embeddings)
+            success = rag_engine.index_document(filepath, filename)
+            
+            if success:
+                # Add document metadata to local project storage
+                local_project_storage.add_document(store_id, filename)
+                print(f"[UPLOAD] ✅ Document indexed and stored: {filename}")
+            else:
+                print(f"[UPLOAD] ❌ Failed to index document: {filename}")
+                return 'Failed to index document', 500
+        else:
+            # Google store document
+            print(f"[UPLOAD] Processing Google store: {store_id}, file: {filename}")
             gfs.add_document_to_store(store_id, filepath)
-        finally:
-            # Clean up uploaded file
-            if os.path.exists(filepath):
-                os.remove(filepath)
+            print(f"[UPLOAD] ✅ Document uploaded to Google store: {filename}")
         
-        # Return updated document items only (to keep the header)
-        # Wait, the target in document_list.html is #document-list which contains the items.
-        # So we should return document_items.html
+        # Return updated document items
+        local_projects = local_project_storage.list_projects()
+        project = next((p for p in local_projects if p['id'] == store_id), None)
+        
+        if project:
+            # Local project
+            documents = [
+                {
+                    'name': doc_name,
+                    'display_name': doc_name,
+                    'mime_type': 'document',
+                    'indexed_at': doc_info.get('indexed_at') if isinstance(doc_info, dict) else None,
+                    'state': type('State', (), {'name': 'INDEXED'})()  # Mock state object for template compatibility
+                }
+                for doc_name, doc_info in (
+                    ((d, project['documents'].get(d)) if isinstance(project['documents'], dict) else (d, {}))
+                    for d in project.get('documents', []) if d
+                )
+            ]
+        else:
+            # Google store
+            documents = gfs.list_documents_in_store(store_id)
+        
+        return render_template('partials/document_items.html', documents=documents)
+        
+    except Exception as e:
+        print(f"[UPLOAD] ❌ Error uploading document: {e}")
+        return f'Error uploading document: {str(e)}', 500
+    finally:
+        # Clean up uploaded file
+        if filepath and os.path.exists(filepath):
+            os.remove(filepath)
+            print(f"[UPLOAD] Cleaned up temporary file: {filename}")
 @app.route('/api/documents/<path:document_id>', methods=['DELETE'])
 def delete_document(document_id):
-    # document_id is the full resource name, e.g. fileSearchStores/.../documents/...
-    # We need to extract the store_id to re-list documents
-    # Format: fileSearchStores/{store_id}/documents/{doc_id}
-    parts = document_id.split('/')
-    store_id = f"{parts[0]}/{parts[1]}"
+    """Delete a document from either local or Google storage"""
+    # document_id format for Google: fileSearchStores/{store_id}/documents/{doc_id}
+    # For local projects, store_id will be in the query params
     
-    gfs.delete_document_from_store(document_id)
+    # URL decode the document_id in case it contains special characters
+    from urllib.parse import unquote
+    document_id = unquote(document_id)
     
-    documents = gfs.list_documents_in_store(store_id)
+    # Check if this is a local document (store_id will be in the query params)
+    store_id = request.args.get('store_id')
+    
+    print(f"[DELETE] Starting deletion process...")
+    print(f"[DELETE]   document_id (decoded): {document_id}")
+    print(f"[DELETE]   store_id: {store_id}")
+    
+    if store_id and store_id.startswith('local_'):
+        # Local document deletion
+        print(f"[DELETE] Deleting local document...")
+        
+        # Remove from local storage
+        local_project_storage.remove_document(store_id, document_id)
+        print(f"[DELETE] ✅ Removed from local storage: {document_id}")
+        
+        # Also delete embeddings from ChromaDB
+        try:
+            from src.local_rag import get_rag_engine
+            
+            # Get RAG engine (fresh instance will load latest data from disk)
+            rag_engine = get_rag_engine(store_id)
+            
+            # Debug: Check what's in ChromaDB BEFORE deletion
+            all_docs_before = rag_engine.chroma_collection.get()
+            print(f"[DELETE] ChromaDB IDs before deletion: {all_docs_before.get('ids', [])}")
+            
+            # Try to match the document ID
+            chroma_ids = all_docs_before.get('ids', [])
+            matching_ids = [cid for cid in chroma_ids if cid.lower() == document_id.lower() or cid == document_id]
+            
+            if matching_ids:
+                print(f"[DELETE] Found matching IDs: {matching_ids}")
+                for match_id in matching_ids:
+                    rag_engine.delete_document(match_id)
+            else:
+                print(f"[DELETE] ⚠️  No matching IDs found for '{document_id}'")
+                print(f"[DELETE]    Available IDs: {chroma_ids}")
+                # Try anyway with the provided ID
+                rag_engine.delete_document(document_id)
+            
+            print(f"[DELETE] ✅ ChromaDB deletion completed")
+            
+        except Exception as e:
+            print(f"[DELETE] ❌ Error deleting embeddings: {e}")
+            import traceback
+            traceback.print_exc()
+    else:
+        # Google document deletion - parse store_id from document_id
+        parts = document_id.split('/')
+        if len(parts) >= 2:
+            store_id = f"{parts[0]}/{parts[1]}"
+        gfs.delete_document_from_store(document_id)
+        print(f"[DELETE] Removed Google document: {document_id}")
+    
+    # Return updated document items
+    if store_id and store_id.startswith('local_'):
+        local_projects = local_project_storage.list_projects()
+        project = next((p for p in local_projects if p['id'] == store_id), None)
+        
+        if project:
+            documents = [
+                {
+                    'name': doc_name,
+                    'display_name': doc_name,
+                    'mime_type': 'document',
+                    'indexed_at': doc_info.get('indexed_at') if isinstance(doc_info, dict) else None,
+                    'state': type('State', (), {'name': 'INDEXED'})()  # Mock state object for template compatibility
+                }
+                for doc_name, doc_info in (
+                    ((d, project['documents'].get(d)) if isinstance(project['documents'], dict) else (d, {}))
+                    for d in project.get('documents', []) if d
+                )
+            ]
+        else:
+            documents = []
+    else:
+        documents = gfs.list_documents_in_store(store_id)
+    
     return render_template('partials/document_items.html', documents=documents)
 
 # Prompts
@@ -183,9 +405,6 @@ def manage_project_prompt(store_id):
     prompt = prompt_storage.get_prompt(store_id)
     print(f"[PROMPT] Loading prompt for store {store_id}: {prompt[:50] if prompt else 'None'}...")
     return jsonify({'prompt': prompt})
-
-# Chatcuments = gfs.list_documents_in_store(store_id)
-    return render_template('partials/document_items.html', documents=documents)
 
 # Chat
 @app.route('/api/chat', methods=['POST'])
@@ -203,23 +422,45 @@ def ask_question():
     start_time = time.time()
     app.logger.info(f'[CHAT] Query started at {start_time:.3f} - Store: {store_id} | Query: {query[:50]}...')
     
-    # Generate answer with optional custom prompt
-    # No need to load from prompt_storage anymore - it's already loaded on frontend
-    answer_text = gfs.ask_store_question(store_id, query, system_prompt if system_prompt else None)
+    try:
+        source_nodes = []  # Initialize source nodes
+        
+        # Check if it's a local project
+        if store_id.startswith('local_'):
+            print(f"[CHAT] Processing local project: {store_id}")
+            rag_engine = get_rag_engine(store_id)
+            result = rag_engine.query(query, top_k=3)
+            answer_text = result['response']
+            source_nodes = result.get('source_nodes', [])
+        else:
+            # Google store
+            print(f"[CHAT] Processing Google store: {store_id}")
+            answer_text = gfs.ask_store_question(store_id, query, system_prompt if system_prompt else None)
+        
+        # Calculate duration
+        end_time = time.time()
+        duration = end_time - start_time
+        app.logger.info(f'[CHAT] Query completed in {duration:.2f}s - Store: {store_id}')
+        
+        # Convert markdown to HTML
+        answer_html = markdown.markdown(answer_text)
+        
+        # Render both user message and bot response
+        user_html = render_template('partials/chat_message.html', message=query, sender='user')
+        bot_html = render_template('partials/chat_message.html', 
+                                   message=answer_html, 
+                                   sender='bot',
+                                   source_nodes=source_nodes,
+                                   is_local=store_id.startswith('local_'))
+        
+        return user_html + bot_html
     
-    # Calculate duration
-    end_time = time.time()
-    duration = end_time - start_time
-    app.logger.info(f'[CHAT] Query completed in {duration:.2f}s - Store: {store_id}')
-    
-    # Convert markdown to HTML
-    answer_html = markdown.markdown(answer_text)
-    
-    # Render both user message and bot response
-    user_html = render_template('partials/chat_message.html', message=query, sender='user')
-    bot_html = render_template('partials/chat_message.html', message=answer_html, sender='bot')
-    
-    return user_html + bot_html
+    except Exception as e:
+        print(f"[CHAT] ❌ Error processing query: {e}")
+        error_html = render_template('partials/chat_message.html', 
+                                    message=f"Error processing query: {str(e)}", 
+                                    sender='bot')
+        return error_html, 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
