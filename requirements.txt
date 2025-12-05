@@ -10,3 +10,7 @@ gunicorn
 pytest
 pytest-mock
 werkzeug
+pypdf
+ollama
+chromadb
+llama-index

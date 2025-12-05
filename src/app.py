@@ -23,7 +23,16 @@ app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 
 # Load configuration based on environment
 env = os.getenv('FLASK_ENV', 'development')
-app.config.from_object(get_config(env))
+config_class = get_config(env)
+app.config.from_object(config_class)
+
+# Validate production configuration at runtime if needed
+if env == 'production' and hasattr(config_class, 'validate'):
+    try:
+        config_class.validate()
+    except ValueError as e:
+        print(f"⚠️  WARNING: Production configuration issue: {e}")
+        print("   The app will still start, but ensure SECRET_KEY is set in production!")
 
 # Set APPLICATION_ROOT for production (handles /rag prefix)
 if env == 'production':
@@ -44,6 +53,9 @@ app.wsgi_app = ProxyFix(
 def inject_url_prefix():
     """Inject URL prefix into all templates for proper URL generation"""
     url_prefix = app.config.get('APPLICATION_ROOT', '')
+    # Ensure url_prefix doesn't end with slash for proper concatenation
+    if url_prefix.endswith('/'):
+        url_prefix = url_prefix[:-1]
     return dict(url_prefix=url_prefix)
 
 # Setup CORS with environment-specific origins

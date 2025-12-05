@@ -61,12 +61,12 @@
             <h1 class="text-xl font-bold tracking-tight">Gemini File Search</h1>
         </div>
         <div class="flex gap-4">
-            <button hx-get="{{ url_prefix }}/admin" hx-target="#main-content" hx-swap="innerHTML" class="px-4 py-2 rounded-md hover:bg-gray-100 font-medium transition-colors">Admin</button>
-            <button hx-get="{{ url_prefix }}/chat" hx-target="#main-content" hx-swap="innerHTML" class="px-4 py-2 rounded-md hover:bg-gray-100 font-medium transition-colors">Chat</button>
+            <button hx-get="{% if url_prefix %}{{ url_prefix }}{% endif %}/admin" hx-target="#main-content" hx-swap="innerHTML" class="px-4 py-2 rounded-md hover:bg-gray-100 font-medium transition-colors">Admin</button>
+            <button hx-get="{% if url_prefix %}{{ url_prefix }}{% endif %}/chat" hx-target="#main-content" hx-swap="innerHTML" class="px-4 py-2 rounded-md hover:bg-gray-100 font-medium transition-colors">Chat</button>
         </div>
     </nav>
 
-    <main id="main-content" class="flex-1 overflow-hidden p-6" hx-get="{{ url_prefix }}/admin" hx-trigger="load">
+    <main id="main-content" class="flex-1 overflow-hidden p-6" hx-get="{% if url_prefix %}{{ url_prefix }}{% endif %}/admin" hx-trigger="load">
         <!-- Content will be loaded here -->
     </main>
 

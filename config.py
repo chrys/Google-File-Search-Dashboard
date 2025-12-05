@@ -43,10 +43,15 @@ class ProductionConfig(Config):
         "https://fasolaki.com"
     ]
     
-    # Verify SECRET_KEY is set
-    SECRET_KEY = os.getenv('SECRET_KEY')
-    if not SECRET_KEY or SECRET_KEY == 'dev-secret-key-change-in-production':
-        raise ValueError("SECRET_KEY environment variable must be set and changed in production")
+    # Get SECRET_KEY from environment or use default
+    # Validation happens at runtime in the app, not at import time
+    SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+    
+    @classmethod
+    def validate(cls):
+        """Validate production configuration at runtime"""
+        if not cls.SECRET_KEY or cls.SECRET_KEY == 'dev-secret-key-change-in-production':
+            raise ValueError("SECRET_KEY environment variable must be set and changed in production")
 
 
 class TestingConfig(Config):
