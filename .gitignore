@@ -18,3 +18,4 @@ __pycache__/
 uploads/*
 git_ignore/
 Documentation/DEPLOYMENT_GUIDE.md
+rag_data/*
