@@ -1,14 +1,17 @@
 import os
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 import pypdf
 from pathlib import Path
+import json
+import pickle
 
 try:
-    import chromadb
-    CHROMADB_AVAILABLE = True
+    import faiss
+    import numpy as np
+    FAISS_AVAILABLE = True
 except ImportError:
-    CHROMADB_AVAILABLE = False
+    FAISS_AVAILABLE = False
 
 try:
     from llama_index.core import Document, VectorStoreIndex
@@ -21,7 +24,7 @@ except ImportError:
 
 
 class LocalRAGEngine:
-    """Handles RAG operations for local projects using Ollama and ChromaDB"""
+    """Handles RAG operations for local projects using Ollama and FAISS"""
     
     def __init__(self, project_id: str, data_dir: str = None):
         """
@@ -29,12 +32,12 @@ class LocalRAGEngine:
         
         Args:
             project_id: The local project ID
-            data_dir: Directory for ChromaDB storage. Defaults to project root/rag_data
+            data_dir: Directory for FAISS index storage. Defaults to project root/rag_data
         """
-        if not LLAMAINDEX_AVAILABLE or not CHROMADB_AVAILABLE:
+        if not LLAMAINDEX_AVAILABLE or not FAISS_AVAILABLE:
             raise ImportError(
-                "LocalRAGEngine requires chromadb and llama-index packages. "
-                "Install with: pip install chromadb llama-index llama-index-llms-ollama "
+                "LocalRAGEngine requires faiss and llama-index packages. "
+                "Install with: pip install faiss-cpu llama-index llama-index-llms-ollama "
                 "llama-index-embeddings-ollama"
             )
         
@@ -46,22 +49,6 @@ class LocalRAGEngine:
         
         self.data_dir = data_dir
         os.makedirs(self.data_dir, exist_ok=True)
-        
-        # Initialize ChromaDB with persistent storage
-        self.chroma_client = chromadb.HttpClient() if self._is_chroma_server_running() else self._init_local_chroma()
-        self.collection_name = f"project_{project_id.replace('-', '_').replace(':', '_')}"
-        
-        # Get or create collection
-        # CRITICAL: Use get_or_create_collection to ensure collection exists and persists
-        try:
-            self.chroma_collection = self.chroma_client.get_or_create_collection(
-                name=self.collection_name,
-                metadata={"hnsw:space": "cosine"}
-            )
-            print(f"📊 [INIT] Opened collection '{self.collection_name}' with {self.chroma_collection.count()} documents")
-        except Exception as e:
-            print(f"❌ [INIT] Error opening collection: {e}")
-            raise
         
         # Initialize embeddings model
         self.embed_model = OllamaEmbedding(
@@ -76,42 +63,108 @@ class LocalRAGEngine:
             temperature=0.7
         )
         
-        # We'll manually handle embedding and storage since we removed ChromaVectorStore
+        # Initialize FAISS index with IndexIDMap for efficient deletion
+        self.index_path = os.path.join(self.data_dir, "faiss_index.bin")
+        self.metadata_path = os.path.join(self.data_dir, "metadata.json")
+        
+        self.documents = {}  # Store document content by ID
+        self.metadata = {}   # Store metadata
+        self.embedding_dim = None  # Will be determined from first embedding
+        self.index = None
+        self.id_counter = 0  # Counter for assigning document IDs
+        
+        # Load existing index if it exists
+        self._load_index()
+        
         print(f"✅ RAG Engine initialized for project: {project_id}")
     
-    def _is_chroma_server_running(self) -> bool:
-        """Check if ChromaDB server is running"""
-        try:
-            import requests
-            requests.get("http://localhost:8000/api/v1", timeout=2)
-            return True
-        except:
-            return False
-    
-    def _init_local_chroma(self):
-        """Initialize local ChromaDB client with persistent storage"""
-        if chromadb is None:
-            raise ImportError("chromadb is not installed")
+    def _load_index(self):
+        """Load FAISS IndexIDMap from disk if it exists"""
+        if os.path.exists(self.index_path) and os.path.exists(self.metadata_path):
+            try:
+                print(f"📂 Loading FAISS index from disk...")
+                # Load metadata first to get ID counter and data
+                with open(self.metadata_path, 'r') as f:
+                    data = json.load(f)
+                    self.metadata = {int(k): v for k, v in data.get('metadata', {}).items()}
+                    self.documents = {int(k): v for k, v in data.get('documents', {}).items()}
+                    # Use stored embedding_dim if available, otherwise will be set on first embedding
+                    stored_dim = data.get('embedding_dim')
+                    if stored_dim:
+                        self.embedding_dim = stored_dim
+                        print(f"📂 Loaded embedding_dim from metadata: {self.embedding_dim}")
+                    self.id_counter = data.get('id_counter', max(self.metadata.keys()) + 1 if self.metadata else 0)
+                print(f"📂 Loaded metadata with {len(self.metadata)} documents (IDs: {sorted(self.metadata.keys())})")
+                
+                # Load the FAISS index
+                loaded_index = faiss.read_index(self.index_path)
+                print(f"📂 Loaded raw index type: {type(loaded_index).__name__} with {loaded_index.ntotal} vectors")
+                
+                # If it's already an IndexIDMap, use it directly; otherwise, we have a problem
+                if isinstance(loaded_index, faiss.IndexIDMap):
+                    self.index = loaded_index
+                    print(f"✅ Index is already IndexIDMap with IDs intact")
+                else:
+                    # This shouldn't happen if we saved correctly, but warn user
+                    print(f"⚠️ WARNING: Loaded index is not IndexIDMap! Type: {type(loaded_index).__name__}")
+                    print(f"⚠️ This indicates the save didn't preserve the IndexIDMap wrapper!")
+                    # Try to rewrap it, but this will lose the original IDs
+                    self.index = faiss.IndexIDMap(loaded_index)
+                    print(f"⚠️ Rewrapped as IndexIDMap, but IDs may be lost. Document count: {self.index.ntotal}")
+                
+                print(f"✅ Loaded FAISS IndexIDMap with {self.index.ntotal} documents")
+                
+                # Sanity check: index vector count should match metadata count
+                if self.index.ntotal != len(self.metadata):
+                    print(f"⚠️ MISMATCH: Index has {self.index.ntotal} vectors but metadata has {len(self.metadata)} documents!")
+                    print(f"⚠️ This could cause inconsistency issues!")
+                    
+            except Exception as e:
+                print(f"⚠️ Error loading index: {e}")
+                import traceback
+                traceback.print_exc()
+                self.index = None
         
+        if self.index is None:
+            # Create new IndexIDMap with FlatL2
+            # Use a temporary dimension; it will be set to actual dimension on first indexing
+            temp_dim = self.embedding_dim if self.embedding_dim else 768  # Default to 768 (Ollama embeddinggemma dimension)
+            quantizer = faiss.IndexFlatL2(temp_dim)
+            self.index = faiss.IndexIDMap(quantizer)
+            self.embedding_dim = temp_dim  # Set embedding_dim now
+            self.id_counter = 0
+            print(f"📊 Created new FAISS IndexIDMap (dimension: {self.embedding_dim})")
+    
+    def _save_index(self):
+        """Save FAISS IndexIDMap and metadata to disk"""
         try:
-            # For chromadb 0.3.x, use duckdb+parquet for persistent storage
-            persist_dir = os.path.join(self.data_dir, ".chroma")
-            os.makedirs(persist_dir, exist_ok=True)
-            print(f"📊 Initializing ChromaDB with persistent storage at: {persist_dir}")
-            
-            client = chromadb.Client(
-                settings=chromadb.config.Settings(
-                    chroma_db_impl="duckdb+parquet",
-                    persist_directory=persist_dir,
-                    anonymized_telemetry=False
-                )
-            )
-            print("✅ ChromaDB persistent storage initialized successfully")
-            return client
+            if self.index is not None:
+                print(f"💾 Saving FAISS index with {self.index.ntotal} documents...")
+                # For IndexIDMap, we need to save the wrapper itself, not the base index
+                # Make sure we're saving the complete IndexIDMap with IDs intact
+                faiss.write_index(self.index, self.index_path)
+                print(f"💾 Saved FAISS IndexIDMap to {self.index_path}")
+                
+                # Verify the save by reading it back
+                try:
+                    test_index = faiss.read_index(self.index_path)
+                    print(f"✅ Verified save: index has {test_index.ntotal} vectors")
+                except Exception as ve:
+                    print(f"⚠️ Warning: Could not verify index save: {ve}")
+                
+                # Save metadata with ID counter
+                with open(self.metadata_path, 'w') as f:
+                    json.dump({
+                        'metadata': {str(k): v for k, v in self.metadata.items()},
+                        'documents': {str(k): v for k, v in self.documents.items()},
+                        'embedding_dim': self.embedding_dim,
+                        'id_counter': self.id_counter
+                    }, f, indent=2)
+                print(f"💾 Saved metadata with {len(self.metadata)} documents to {self.metadata_path}")
         except Exception as e:
-            print(f"⚠️ Error initializing persistent ChromaDB: {e}")
-            print("⚠️ Falling back to ephemeral client - data will NOT persist between app restarts")
-            return chromadb.Client()
+            print(f"❌ Error saving index: {e}")
+            import traceback
+            traceback.print_exc()
     
     def extract_text_from_pdf(self, pdf_path: str) -> str:
         """Extract text from PDF file"""
@@ -147,7 +200,7 @@ class LocalRAGEngine:
     
     def index_document(self, file_path: str, document_name: str) -> bool:
         """
-        Index a document by extracting text and creating embeddings in ChromaDB
+        Index a document by extracting text and creating embeddings in FAISS IndexIDMap
         
         Args:
             file_path: Path to the document file
@@ -166,40 +219,56 @@ class LocalRAGEngine:
             
             # Create embedding using Ollama
             embedding = self.embed_model.get_text_embedding(text)
+            embedding_array = np.array([embedding], dtype=np.float32)
             
-            # Get count before adding
-            count_before = self.chroma_collection.count()
+            # Validate embedding dimension
+            embedding_dim = len(embedding)
+            print(f"📊 Embedding dimension: {embedding_dim}, Index dimension: {self.embedding_dim}")
             
-            # Store in ChromaDB
-            self.chroma_collection.add(
-                ids=[document_name],
-                embeddings=[embedding],
-                metadatas=[{
-                    "document_name": document_name,
-                    "file_path": file_path,
-                    "indexed_at": datetime.now().isoformat(),
-                    "project_id": self.project_id
-                }],
-                documents=[text]
-            )
+            # Initialize FAISS index if not already done
+            if self.index is None:
+                self.embedding_dim = embedding_dim
+                quantizer = faiss.IndexFlatL2(self.embedding_dim)
+                self.index = faiss.IndexIDMap(quantizer)
+                print(f"📊 Created FAISS IndexIDMap with dimension {self.embedding_dim}")
+            elif embedding_dim != self.embedding_dim:
+                # Dimension mismatch - this shouldn't happen but let's handle it
+                print(f"⚠️ Embedding dimension mismatch! Expected {self.embedding_dim}, got {embedding_dim}")
+                print(f"⚠️ Recreating index with correct dimension...")
+                self.embedding_dim = embedding_dim
+                quantizer = faiss.IndexFlatL2(self.embedding_dim)
+                self.index = faiss.IndexIDMap(quantizer)
+                self.id_counter = 0
+                self.metadata = {}
+                self.documents = {}
             
-            # Get count after adding
-            count_after = self.chroma_collection.count()
-            print(f"✅ Indexed document: {document_name}")
-            print(f"📊 Collection size: {count_before} → {count_after}")
+            # Assign document ID and add to FAISS with ID
+            doc_id = self.id_counter
+            self.id_counter += 1
+            doc_id_array = np.array([doc_id], dtype=np.int64)
+            self.index.add_with_ids(embedding_array, doc_id_array)
             
-            # Persist the changes to disk
-            try:
-                if hasattr(self.chroma_client, 'persist'):
-                    self.chroma_client.persist()
-                    print(f"💾 Persisted ChromaDB to disk")
-            except Exception as e:
-                print(f"⚠️ Could not persist ChromaDB: {e}")
+            # Store metadata and document
+            self.metadata[doc_id] = {
+                "document_name": document_name,
+                "file_path": file_path,
+                "indexed_at": datetime.now().isoformat(),
+                "project_id": self.project_id
+            }
+            self.documents[doc_id] = text
+            
+            print(f"✅ Indexed document: {document_name} (ID: {doc_id})")
+            print(f"📊 Index size: {self.index.ntotal} documents")
+            
+            # Save to disk
+            self._save_index()
             
             return True
             
         except Exception as e:
             print(f"❌ Error indexing document: {e}")
+            import traceback
+            traceback.print_exc()
             raise
     
     def query(self, query_text: str, top_k: int = 3) -> dict:
@@ -214,17 +283,9 @@ class LocalRAGEngine:
             Dictionary with query response and source documents
         """
         try:
-            # Check collection count first
-            collection_count = self.chroma_collection.count()
-            print(f"📊 [QUERY] Collection has {collection_count} documents")
-            
-            # List all document IDs
-            all_docs = self.chroma_collection.get()
-            all_ids = all_docs.get('ids', [])
-            print(f"📊 [QUERY] Document IDs in collection: {all_ids}")
-            
-            if collection_count == 0:
-                print(f"⚠️ [QUERY] No documents in collection, returning empty result")
+            # Check if index exists and has documents
+            if self.index is None or self.index.ntotal == 0:
+                print(f"⚠️ [QUERY] No documents in index")
                 return {
                     "response": "I don't have any indexed documents to answer this question. Please upload documents first.",
                     "source_nodes": []
@@ -232,36 +293,38 @@ class LocalRAGEngine:
             
             # Embed the query
             query_embedding = self.embed_model.get_text_embedding(query_text)
+            query_array = np.array([query_embedding], dtype=np.float32)
             
             # Determine actual k value
-            actual_k = min(top_k, collection_count)
-            print(f"📊 [QUERY] Requesting {actual_k} results (top_k={top_k}, available={collection_count})")
+            actual_k = min(top_k, self.index.ntotal)
+            print(f"📊 [QUERY] Searching {actual_k} results (top_k={top_k}, available={self.index.ntotal})")
             
-            # Query ChromaDB
-            results = self.chroma_collection.query(
-                query_embeddings=[query_embedding],
-                n_results=actual_k
-            )
+            # Query FAISS
+            distances, indices = self.index.search(query_array, actual_k)
             
-            print(f"📊 [QUERY] ChromaDB returned {len(results.get('documents', [[]])[0])} results")
+            print(f"📊 [QUERY] FAISS returned {len(indices[0])} results")
             
             # Extract documents and create context
             source_docs = []
             context_text = ""
             
-            if results['documents'] and len(results['documents']) > 0:
-                for i, doc in enumerate(results['documents'][0]):
-                    source_docs.append({
-                        "document": results['metadatas'][0][i].get("document_name"),
-                        "score": float(results['distances'][0][i]) if results['distances'] else 0
-                    })
-                    context_text += f"\n---\nDocument: {results['metadatas'][0][i].get('document_name')}\n{doc}\n"
+            for i, doc_id in enumerate(indices[0]):
+                if doc_id >= 0:  # -1 means no result found
+                    if doc_id in self.documents:
+                        metadata = self.metadata.get(doc_id, {})
+                        doc_text = self.documents[doc_id]
+                        distance = float(distances[0][i])
+                        
+                        source_docs.append({
+                            "document": metadata.get("document_name", f"Doc {doc_id}"),
+                            "score": distance
+                        })
+                        context_text += f"\n---\nDocument: {metadata.get('document_name')}\n{doc_text[:1000]}\n"  # Limit context
             
             print(f"📊 [QUERY] Found {len(source_docs)} source documents: {[s['document'] for s in source_docs]}")
             
             # Generate response using LLM
             if len(source_docs) == 0:
-                # No documents found - tell the LLM explicitly not to answer from general knowledge
                 response_text = "I don't have any indexed documents to answer this question. Please upload documents first."
             else:
                 prompt = f"Based on the following documents, answer this question: {query_text}\n\nDocuments:{context_text}"
@@ -278,85 +341,99 @@ class LocalRAGEngine:
     def get_collection_info(self) -> dict:
         """Get information about the indexed documents"""
         try:
-            collection = self.chroma_client.get_collection(self.collection_name)
-            count = collection.count()
-            
             return {
                 "project_id": self.project_id,
-                "collection_name": self.collection_name,
-                "document_count": count,
+                "index_name": "FAISS",
+                "document_count": self.index.ntotal if self.index else 0,
                 "data_dir": self.data_dir
             }
         except Exception as e:
-            print(f"⚠️ Error getting collection info: {e}")
+            print(f"⚠️ Error getting index info: {e}")
             return {
                 "project_id": self.project_id,
-                "collection_name": self.collection_name,
+                "index_name": "FAISS",
                 "document_count": 0,
                 "data_dir": self.data_dir
             }
     
     def delete_document(self, document_name: str) -> bool:
-        """Delete a document's embeddings from ChromaDB by document name/ID"""
+        """Delete a document from FAISS IndexIDMap by document name"""
         try:
-            # Get collection count before deletion
-            count_before = self.chroma_collection.count()
-            print(f"📊 Collection count BEFORE deletion: {count_before}")
-            
-            # List all document IDs in collection
-            all_docs = self.chroma_collection.get()
-            print(f"📊 Document IDs in collection: {all_docs.get('ids', [])}")
             print(f"📊 Attempting to delete: '{document_name}'")
             
-            # Delete the document from ChromaDB by ID (which is the document name)
-            self.chroma_collection.delete(ids=[document_name])
+            # Find the document ID by name
+            doc_id_to_delete = None
+            for doc_id, meta in self.metadata.items():
+                if meta.get("document_name") == document_name:
+                    doc_id_to_delete = doc_id
+                    break
             
-            # Get collection count after deletion
-            count_after = self.chroma_collection.count()
-            print(f"📊 Collection count AFTER deletion: {count_after}")
-            print(f"✅ Deleted embeddings for document: {document_name}")
-            
-            # Verify deletion by checking remaining docs
-            remaining_docs = self.chroma_collection.get()
-            print(f"📊 Remaining document IDs: {remaining_docs.get('ids', [])}")
-            
-            # Persist the changes to disk
-            try:
-                if hasattr(self.chroma_client, 'persist'):
-                    self.chroma_client.persist()
-                    print(f"💾 Persisted ChromaDB to disk after deletion")
-            except Exception as e:
-                print(f"⚠️ Could not persist ChromaDB after deletion: {e}")
-            
-            # Verify deletion by trying to get the document
-            try:
-                result = self.chroma_collection.get(ids=[document_name])
-                if result['ids']:
-                    print(f"⚠️ WARNING: Document still exists after deletion attempt!")
-                    return False
-            except:
-                pass
-            
-            return True
+            if doc_id_to_delete is not None:
+                # Remove from metadata and documents first
+                del self.metadata[doc_id_to_delete]
+                del self.documents[doc_id_to_delete]
+                
+                print(f"✅ Deleted document: {document_name}")
+                print(f"📊 Remaining documents: {len(self.metadata)}")
+                
+                # Rebuild the FAISS index with remaining documents
+                # This ensures embeddings are actually removed (remove_ids can leave orphaned vectors)
+                if len(self.metadata) > 0:
+                    print(f"🔄 Rebuilding FAISS index with remaining documents...")
+                    embeddings_list = []
+                    id_list = []
+                    
+                    # Get embeddings for all remaining documents
+                    for doc_id in sorted(self.metadata.keys()):
+                        text = self.documents[doc_id]
+                        embedding = self.embed_model.get_text_embedding(text)
+                        embeddings_list.append(embedding)
+                        id_list.append(doc_id)
+                    
+                    # Create new index with remaining documents
+                    embeddings_array = np.array(embeddings_list, dtype=np.float32)
+                    id_array = np.array(id_list, dtype=np.int64)
+                    
+                    quantizer = faiss.IndexFlatL2(self.embedding_dim)
+                    self.index = faiss.IndexIDMap(quantizer)
+                    self.index.add_with_ids(embeddings_array, id_array)
+                    
+                    print(f"✅ Rebuilt FAISS index with {len(self.metadata)} documents")
+                else:
+                    # No documents left - create empty index
+                    print(f"🔄 Clearing FAISS index (no documents left)...")
+                    quantizer = faiss.IndexFlatL2(self.embedding_dim)
+                    self.index = faiss.IndexIDMap(quantizer)
+                    print(f"✅ FAISS index cleared")
+                
+                self._save_index()
+                return True
+            else:
+                print(f"⚠️ Document not found: {document_name}")
+                return False
         except Exception as e:
-            print(f"❌ Error deleting document embeddings: {e}")
+            print(f"❌ Error deleting document: {e}")
             import traceback
             traceback.print_exc()
             return False
     
     def clear_collection(self) -> bool:
-        """Clear all embeddings from the collection"""
+        """Clear all embeddings from the index"""
         try:
-            self.chroma_client.delete_collection(self.collection_name)
-            # Recreate empty collection
-            self.chroma_client.get_or_create_collection(
-                name=self.collection_name,
-                metadata={"hnsw:space": "cosine"}
-            )
-            print(f"✅ Cleared collection: {self.collection_name}")
+            self.index = None
+            self.metadata = {}
+            self.documents = {}
+            
+            # Delete index files
+            if os.path.exists(self.index_path):
+                os.remove(self.index_path)
+            if os.path.exists(self.metadata_path):
+                os.remove(self.metadata_path)
+            
+            print(f"✅ Cleared FAISS index for project: {self.project_id}")
             return True
         except Exception as e:
-            print(f"❌ Error clearing collection: {e}")
+            print(f"❌ Error clearing index: {e}")
             return False
 
 

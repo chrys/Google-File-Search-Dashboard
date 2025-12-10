@@ -11,9 +11,7 @@ pytest
 pytest-mock
 werkzeug
 pypdf
-ollama
-chromadb
 llama-index
 llama-index-llms-ollama
 llama-index-embeddings-ollama
-pydantic-settings
+faiss-cpu

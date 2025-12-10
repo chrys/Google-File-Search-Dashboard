@@ -16,7 +16,14 @@ from local_project_storage import get_local_project_storage
 # Add parent directory to path for config
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import get_config
-from local_rag import get_rag_engine
+
+# Try to import local RAG, but don't fail if dependencies are missing
+try:
+    from local_rag import get_rag_engine
+    LOCAL_RAG_AVAILABLE = True
+except ImportError:
+    LOCAL_RAG_AVAILABLE = False
+    print("⚠️  Local RAG features disabled - chromadb/llama-index dependencies not available")
 
 # Setup template and static folders to point to parent directory
 template_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'templates')
@@ -296,6 +303,8 @@ def upload_document(store_id):
         
     except Exception as e:
         print(f"[UPLOAD] ❌ Error uploading document: {e}")
+        import traceback
+        traceback.print_exc()
         return f'Error uploading document: {str(e)}', 500
     finally:
         # Clean up uploaded file
@@ -323,41 +332,39 @@ def delete_document(document_id):
         # Local document deletion
         print(f"[DELETE] Deleting local document...")
         
-        # Remove from local storage
-        local_project_storage.remove_document(store_id, document_id)
-        print(f"[DELETE] ✅ Removed from local storage: {document_id}")
-        
-        # Also delete embeddings from ChromaDB
+        # Delete from FAISS FIRST, then from local storage
+        # This ensures consistency: if FAISS deletion fails, we still have the document in local storage
+        deletion_success = False
         try:
             from src.local_rag import get_rag_engine
             
             # Get RAG engine (fresh instance will load latest data from disk)
             rag_engine = get_rag_engine(store_id)
             
-            # Debug: Check what's in ChromaDB BEFORE deletion
-            all_docs_before = rag_engine.chroma_collection.get()
-            print(f"[DELETE] ChromaDB IDs before deletion: {all_docs_before.get('ids', [])}")
+            # Delete the document from FAISS index
+            # document_id is the filename, delete_document expects document_name
+            success = rag_engine.delete_document(document_id)
             
-            # Try to match the document ID
-            chroma_ids = all_docs_before.get('ids', [])
-            matching_ids = [cid for cid in chroma_ids if cid.lower() == document_id.lower() or cid == document_id]
-            
-            if matching_ids:
-                print(f"[DELETE] Found matching IDs: {matching_ids}")
-                for match_id in matching_ids:
-                    rag_engine.delete_document(match_id)
+            if success:
+                print(f"[DELETE] ✅ Deleted from FAISS index: {document_id}")
+                deletion_success = True
             else:
-                print(f"[DELETE] ⚠️  No matching IDs found for '{document_id}'")
-                print(f"[DELETE]    Available IDs: {chroma_ids}")
-                # Try anyway with the provided ID
-                rag_engine.delete_document(document_id)
-            
-            print(f"[DELETE] ✅ ChromaDB deletion completed")
+                print(f"[DELETE] ⚠️  Document not found in FAISS index: {document_id}")
+                # Still treat as success if document wasn't in FAISS (already deleted or never indexed)
+                deletion_success = True
             
         except Exception as e:
             print(f"[DELETE] ❌ Error deleting embeddings: {e}")
             import traceback
             traceback.print_exc()
+            deletion_success = False
+        
+        # Only remove from local storage if FAISS deletion succeeded
+        if deletion_success:
+            local_project_storage.remove_document(store_id, document_id)
+            print(f"[DELETE] ✅ Removed from local storage: {document_id}")
+        else:
+            print(f"[DELETE] ⚠️  Not removing from local storage due to FAISS deletion failure")
     else:
         # Google document deletion - parse store_id from document_id
         parts = document_id.split('/')
@@ -427,6 +434,11 @@ def ask_question():
         
         # Check if it's a local project
         if store_id.startswith('local_'):
+            if not LOCAL_RAG_AVAILABLE:
+                error_html = render_template('partials/chat_message.html', 
+                                            message="Local RAG is not available. Please install chromadb and llama-index dependencies: pip install chromadb llama-index llama-index-llms-ollama llama-index-embeddings-ollama",
+                                            sender='bot')
+                return error_html, 400
             print(f"[CHAT] Processing local project: {store_id}")
             rag_engine = get_rag_engine(store_id)
             result = rag_engine.query(query, top_k=3)
